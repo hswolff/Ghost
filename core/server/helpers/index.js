@@ -2,6 +2,7 @@ var hbs             = require('express-hbs'),
     _               = require('lodash'),
     Promise         = require('bluebird'),
 
+    readTime        = require('read-time'),
     config          = require('../config'),
     errors          = require('../errors'),
 
@@ -42,6 +43,19 @@ coreHelpers.title = require('./title');
 coreHelpers.url = require('./url');
 
 coreHelpers.ghost_script_tags = require('./ghost_script_tags');
+
+// ### Reading time Helper
+//
+// *Usage example:*
+// `{{readTime text}}`
+//
+// Returns a string of the read time of the text.
+//
+// Note that the standard {{#each tags}} implementation is unaffected by this helper
+// and can be used for more complex templates.
+coreHelpers.readTime = function (text, options) {
+    return readTime(text).text;
+};
 
 // ### Filestorage helper
 //
@@ -137,6 +151,7 @@ registerHelpers = function (adminHbs) {
     registerThemeHelper('pagination', coreHelpers.pagination);
     registerThemeHelper('tags', coreHelpers.tags);
     registerThemeHelper('plural', coreHelpers.plural);
+    registerThemeHelper('readTime', coreHelpers.readTime);
 
     // Async theme helpers
     registerAsyncThemeHelper('body_class', coreHelpers.body_class);
