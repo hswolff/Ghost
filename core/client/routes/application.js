@@ -32,6 +32,7 @@ var ApplicationRoute = Ember.Route.extend({
         },
 
         togglePopover: function (name) {
+            $(document).off('click.popover');
             this.popover.toggle(name);
         }
     }

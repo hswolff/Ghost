@@ -2,10 +2,7 @@
 var PopoverService = Ember.Object.extend(Ember.Evented, {
     open: false,
     close: function () {
-        if (this.get('justOpened')) {
-            this.set('justOpened', false);
-            return;
-        }
+
         this.set('open', false);
     },
     toggle: function (name) {
@@ -13,12 +10,15 @@ var PopoverService = Ember.Object.extend(Ember.Evented, {
         this.set('activeName', name);
         this.toggleProperty('open');
     },
-    openObservesBefore: function () {
+    openObserves: function () {
         console.log('openObservesBefore',this.get('open'), arguments);
-        // Only set this if we're going from not open to open,
-        // i.e. false -> true.
-        this.set('justOpened', this.get('open') === false);
-    }.observesBefore('open')
+        var self = this;
+        Ember.run.next(function () {
+            $(document).one('click.popover', function () {
+                self.close();
+            });
+        });
+    }.observes('open')
 });
 
 var registerPopover = {
