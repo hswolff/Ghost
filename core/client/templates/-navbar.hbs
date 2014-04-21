@@ -9,14 +9,14 @@
             {{activating-list-item route="settings" title="Settings" classNames="content"}}
 
             <li id="usermenu" class="usermenu subnav">
-                <a href="" {{action 'toggleMenu'}} class="dropdown">
+                <a href="" {{action 'togglePopover' 'navBar'}} class="dropdown">
                     {{!-- @TODO: show avatar of logged in user --}}
                     <img class="avatar" src="/shared/img/user-image.png" alt="Avatar" />
                     {{!-- @TODO: show logged in user name or email --}}
                     <span class="name">Fake Ghost</span>
                 </a>
                 {{!-- @TODO: add functionality to allow for dropdown to work --}}
-                {{#ghost-popover open=showMenu}}
+                {{#ghost-popover name='navBar'}}
                     <ul class="overlay">
                         <li class="usermenu-profile"><a href="#">Your Profile</a></li>
                         <li class="divider"></li>

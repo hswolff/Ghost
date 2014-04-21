@@ -29,6 +29,10 @@ var ApplicationRoute = Ember.Route.extend({
                     errorObj.el.addClass('input-error');
                 }
             });
+        },
+
+        togglePopover: function (name) {
+            this.popover.toggle(name);
         }
     }
 });
