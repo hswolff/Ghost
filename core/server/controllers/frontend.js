@@ -41,13 +41,17 @@ function setReqCtx(req, data) {
 }
 
 // A private controller fetching multiple posts
-function findPage(req, next) {
+function findPage(req, res, next) {
     var options = {
         page: 1
     };
 
     if (req.params.page !== undefined) {
         options.page = parseInt(req.params.page, 10);
+
+        if (isNaN(options.page) || options.page === 1) {
+            return res.redirect(req.generatePath({ page: null }));
+        }
     }
 
     if (req.params.tag !== undefined) {
@@ -66,12 +70,18 @@ function findPage(req, next) {
         options.include = 'author,tags,fields';
 
         return api.posts.browse(options);
+    }).then(function (page) {
+        if (options.page > page.meta.pagination.pages) {
+            return res.redirect(req.generatePath({ page: page.meta.pagination.pages }));
+        }
+
+        return when(page);
     }).otherwise(handleError(next));
 }
 
 frontendControllers = {
     'homepage': function (req, res, next) {
-        findPage(req, next).then(function (page) {
+        findPage(req, res, next).then(function (page) {
             setReqCtx(req, page.posts);
 
             // Render the page of posts
@@ -81,7 +91,7 @@ frontendControllers = {
         });
     },
     'tag': function (req, res, next) {
-        findPage(req, next).then(function (page) {
+        findPage(req, res, next).then(function (page) {
             setReqCtx(req, page.posts);
             if (page.meta.filters.tags) {
                 setReqCtx(req, page.meta.filters.tags[0]);
