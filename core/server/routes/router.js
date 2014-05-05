@@ -34,13 +34,13 @@ proto = module.exports = function () {
                 params = name;
             }
 
-            if (params != null) {
+            if (params) {
                 _.extend(routeParams, params);
             }
 
             path = route.path;
 
-            _.forEach(routeParams, function(value, key) {
+            _.forEach(routeParams, function (value, key) {
                 var placeholder = new RegExp(':' + key + '[\\?]{0,1}');
 
                 if (value === null) {

@@ -1,8 +1,8 @@
 /*global require, module */
 
-var frontend = require('../controllers/frontend'),
+var api         = require('../api'),
+    frontend    = require('../controllers/frontend'),
     ghostRouter = require('./router'),
-    api = require('../api'),
 
     ONE_HOUR_S = 60 * 60,
     ONE_YEAR_S = 365 * 24 * ONE_HOUR_S;
@@ -11,19 +11,21 @@ module.exports = function () {
     var router = ghostRouter();
 
     // ### Redirect '/feed' to '/rss'
-    router.get('feed', '/feed/', function redirect(req, res, next) {
+    router.get('feed', '/feed/', function redirect(req, res) {
         res.set({'Cache-Control': 'public, max-age=' + ONE_YEAR_S});
         res.redirect(301, req.generatePath('rss'));
     });
 
     // ### Multiple posts routes
-    router.get('browse_tags', '/tag/:tag/:page?/', frontend.tag);
-    router.get('browse', '/:page?/', frontend.homepage);
+    router.get('browse.tags.page', '/tag/:tag/page/:page/', frontend.tag);
+    router.get('browse.tags', '/tag/:tag/', frontend.tag);
+    router.get('browse.page', '/page/:page/', frontend.homepage);
+    router.get('browse', '/', frontend.homepage);
 
     // ### RSS routes
-    router.get('rss_tags_page', '/rss/:tag/page/:page/', frontend.rss);
-    router.get('rss_tags', '/rss/:tag/', frontend.rss);
-    router.get('rss_page', '/rss/page/:page/', frontend.rss);
+    router.get('rss.tags.page', '/rss/tag/:tag/page/:page/', frontend.rss);
+    router.get('rss.tags', '/rss/tag/:tag/', frontend.rss);
+    router.get('rss.page', '/rss/page/:page/', frontend.rss);
     router.get('rss', '/rss/', frontend.rss);
 
     // ### Add permalink route in extra middleware

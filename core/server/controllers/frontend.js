@@ -48,6 +48,8 @@ function findPage(req, res, next) {
     };
 
     return when.promise(function (resolve) {
+        var newRoute;
+
         if (req.params.page !== undefined) {
             options.page = parseInt(req.params.page, 10);
 
@@ -57,8 +59,11 @@ function findPage(req, res, next) {
             }
 
             if (options.page === 1) {
-                // The page is 1, so redirect to remove page from url
-                return res.redirect(req.generatePath({ page: null }));
+                // The page is 1, so redirect to remove page number from url
+                newRoute = req.route.name;
+                // TODO find a better solution for nested optional parts of an url e.g. "/tags/:tag/(page/:page/)?"
+                newRoute = newRoute.substring(0, newRoute.indexOf('.page'));
+                return res.redirect(req.generatePath(newRoute));
             }
         }
 
