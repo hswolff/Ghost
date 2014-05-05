@@ -42,41 +42,52 @@ function setReqCtx(req, data) {
 
 // A private controller fetching multiple posts
 function findPage(req, res, next) {
+    // The post browse options
     var options = {
         page: 1
     };
 
-    if (req.params.page !== undefined) {
-        options.page = parseInt(req.params.page, 10);
+    return when.promise(function (resolve) {
+        if (req.params.page !== undefined) {
+            options.page = parseInt(req.params.page, 10);
 
-        if (isNaN(options.page) || options.page === 1) {
-            return res.redirect(req.generatePath({ page: null }));
+            if (isNaN(options.page)) {
+                // We have a non numeric value so pass this back to the router
+                return next();
+            }
+
+            if (options.page === 1) {
+                // The page is 1, so redirect to remove page from url
+                return res.redirect(req.generatePath({ page: null }));
+            }
         }
-    }
 
-    if (req.params.tag !== undefined) {
-        options.tag = req.params.tag;
-    }
-
-    // Lookup setting for posts per page setting, browse posts and
-    return api.settings.read('postsPerPage').then(function (response) {
-        var postsPerPage = parseInt(response.settings[0].value, 10);
-
-        // No negative posts per page, must be number
-        if (!isNaN(postsPerPage) && postsPerPage > 0) {
-            options.limit = postsPerPage;
+        if (req.params.tag !== undefined) {
+            options.tag = req.params.tag;
         }
+
+        // Options are ready so resolve to fetch posts per page and browse the posts
+        resolve();
     }).then(function () {
-        options.include = 'author,tags,fields';
+        return api.settings.read('postsPerPage').then(function (response) {
+            var postsPerPage = parseInt(response.settings[0].value, 10);
 
-        return api.posts.browse(options);
-    }).then(function (page) {
-        if (options.page > page.meta.pagination.pages) {
-            return res.redirect(req.generatePath({ page: page.meta.pagination.pages }));
-        }
+            // No negative posts per page, must be a number
+            if (!isNaN(postsPerPage) && postsPerPage > 0) {
+                options.limit = postsPerPage;
+            }
+        }).then(function () {
+            options.include = 'author,tags,fields';
 
-        return when(page);
-    }).otherwise(handleError(next));
+            return api.posts.browse(options);
+        }).then(function (page) {
+            if (options.page > page.meta.pagination.pages) {
+                return res.redirect(req.generatePath({ page: page.meta.pagination.pages }));
+            }
+
+            return when(page);
+        }).otherwise(handleError(next));
+    });
 }
 
 frontendControllers = {
