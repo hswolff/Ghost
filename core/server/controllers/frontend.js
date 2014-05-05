@@ -4,58 +4,18 @@
 
 /*global require, module */
 
-var moment      = require('moment'),
-    RSS         = require('rss'),
-    _           = require('lodash'),
-    url         = require('url'),
-    when        = require('when'),
+var moment = require('moment'),
+    RSS = require('rss'),
+    _ = require('lodash'),
+    url = require('url'),
+    when = require('when'),
 
-    api         = require('../api'),
-    config      = require('../config'),
-    filters     = require('../../server/filters'),
-    template    = require('../helpers/template'),
+    api = require('../api'),
+    config = require('../config'),
+    filters = require('../../server/filters'),
+    template = require('../helpers/template'),
 
-    frontendControllers,
-    staticPostPermalink,
-    oldRoute,
-    dummyRouter = require('express').Router();
-
-// Overload this dummyRouter as we only want the layer object.
-// We don't want to keep in memory many items in an array so we
-// clear the stack array after every invocation.
-oldRoute = dummyRouter.route;
-dummyRouter.route = function () {
-    var layer;
-
-    // Apply old route method
-    oldRoute.apply(dummyRouter, arguments);
-
-    // Grab layer object
-    layer = dummyRouter.stack[0];
-
-    // Reset stack array for memory purposes
-    dummyRouter.stack = [];
-
-    // Return layer
-    return layer;
-};
-
-// Cache static post permalink regex
-staticPostPermalink = dummyRouter.route('/:slug/:edit?');
-
-function getPostPage(options) {
-    return api.settings.read('postsPerPage').then(function (response) {
-        var postPP = response.settings[0],
-            postsPerPage = parseInt(postPP.value, 10);
-
-        // No negative posts per page, must be number
-        if (!isNaN(postsPerPage) && postsPerPage > 0) {
-            options.limit = postsPerPage;
-        }
-        options.include = 'author,tags,fields';
-        return api.posts.browse(options);
-    });
-}
+    frontendControllers;
 
 function formatPageResponse(posts, page) {
     return {
@@ -74,73 +34,75 @@ function handleError(next) {
 
 // Add Request context parameter to the data object
 // to be passed down to the templates
-function setReqCtx(req, data) {
+function setRequestContext(req, data) {
     (Array.isArray(data) ? data : [data]).forEach(function (d) {
         d.secure = req.secure;
     });
 }
 
-frontendControllers = {
-    'homepage': function (req, res, next) {
-        // Parse the page number
-        var pageParam = req.params.page !== undefined ? parseInt(req.params.page, 10) : 1,
-            options = {
-                page: pageParam
-            };
+// A private controller fetching multiple posts
+function findPage(req, res, next) {
+    // The post browse options
+    var newRoute,
+        options = {
+            page: 1
+        };
 
-        // No negative pages, or page 1
-        if (isNaN(pageParam) || pageParam < 1 || (pageParam === 1 && req.route.path === '/page/:page/')) {
-            return res.redirect(config().paths.subdir + '/');
+    return when.promise(function (resolve) {
+        if (req.params.page !== undefined) {
+            options.page = parseInt(req.params.page, 10);
+
+            if (isNaN(options.page) || options.page <= 1) {
+                // The page is 1 or less, so redirect to remove page number from url
+                newRoute = req.route.name;
+                // TODO find a better solution for nested optional parts of an url e.g. "/tags/:tag/(page/:page/)?"
+                newRoute = newRoute.substring(0, newRoute.indexOf('.page'));
+                return res.redirect(req.generatePath(newRoute));
+            }
         }
 
-        return getPostPage(options).then(function (page) {
+        if (req.params.tag !== undefined) {
+            options.tag = req.params.tag;
+        }
 
-            // If page is greater than number of pages we have, redirect to last page
-            if (pageParam > page.meta.pagination.pages) {
-                return res.redirect(page.meta.pagination.pages === 1 ? config().paths.subdir + '/' : (config().paths.subdir + '/page/' + page.meta.pagination.pages + '/'));
+        // Options are ready so resolve to fetch posts per page and browse the posts
+        return api.settings.read('postsPerPage').then(function (response) {
+            var postsPerPage = parseInt(response.settings[0].value, 10);
+
+            // No negative posts per page, must be a number
+            if (!isNaN(postsPerPage) && postsPerPage > 0) {
+                options.limit = postsPerPage;
+            }
+        }).then(function () {
+            options.include = 'author,tags,fields';
+
+            return api.posts.browse(options);
+        }).then(function (page) {
+            if (options.page > page.meta.pagination.pages) {
+                return res.redirect(req.generatePath({ page: page.meta.pagination.pages }));
             }
 
-            setReqCtx(req, page.posts);
+            resolve(page);
+        }).otherwise(handleError(next));
+    });
+}
+
+frontendControllers = {
+    'homepage': function (req, res, next) {
+        findPage(req, res, next).then(function (page) {
+            setRequestContext(req, page.posts);
 
             // Render the page of posts
             filters.doFilter('prePostsRender', page.posts).then(function (posts) {
                 res.render('index', formatPageResponse(posts, page));
             });
-        }).otherwise(handleError(next));
+        });
     },
     'tag': function (req, res, next) {
-        // Parse the page number
-        var pageParam = req.params.page !== undefined ? parseInt(req.params.page, 10) : 1,
-            options = {
-                page: pageParam,
-                tag: req.params.slug
-            };
-
-        // Get url for tag page
-        function tagUrl(tag, page) {
-            var url = config().paths.subdir + '/tag/' + tag + '/';
-
-            if (page && page > 1) {
-                url += 'page/' + page + '/';
-            }
-
-            return url;
-        }
-
-        // No negative pages, or page 1
-        if (isNaN(pageParam) || pageParam < 1 || (req.params.page !== undefined && pageParam === 1)) {
-            return res.redirect(tagUrl(options.tag));
-        }
-
-        return getPostPage(options).then(function (page) {
-            // If page is greater than number of pages we have, redirect to last page
-            if (pageParam > page.meta.pagination.pages) {
-                return res.redirect(tagUrl(options.tag, page.meta.pagination.pages));
-            }
-
-            setReqCtx(req, page.posts);
+        findPage(req, res, next).then(function (page) {
+            setRequestContext(req, page.posts);
             if (page.meta.filters.tags) {
-                setReqCtx(req, page.meta.filters.tags[0]);
+                setRequestContext(req, page.meta.filters.tags[0]);
             }
 
             // Render the page of posts
@@ -150,7 +112,7 @@ frontendControllers = {
                         paths = config().paths.availableThemes[activeTheme.value],
                         view = paths.hasOwnProperty('tag.hbs') ? 'tag' : 'index',
 
-                        // Format data for template
+                    // Format data for template
                         result = _.extend(formatPageResponse(posts, page), {
                             tag: page.meta.filters.tags ? page.meta.filters.tags[0] : ''
                         });
@@ -158,68 +120,31 @@ frontendControllers = {
                     res.render(view, result);
                 });
             });
-        }).otherwise(handleError(next));
+        });
     },
     'single': function (req, res, next) {
-        var path = req.path,
-            params,
-            editFormat,
-            usingStaticPermalink = false;
+        var options = _.pick(req.params, 'slug', 'id'),
+            params = {};
 
-        api.settings.read('permalinks').then(function (response) {
-            var permalink = response.settings[0],
-                postLookup;
+        options.include = 'author,tags,fields';
 
-            editFormat = permalink.value[permalink.value.length - 1] === '/' ? ':edit?' : '/:edit?';
-
-            // Convert saved permalink into an express Route object
-            permalink = dummyRouter.route(permalink.value + editFormat);
-
-            // Check if the path matches the permalink structure.
-            //
-            // If there are no matches found we then
-            // need to verify it's not a static post,
-            // and test against that permalink structure.
-            if (permalink.match(path) === false) {
-                // If there are still no matches then return.
-                if (staticPostPermalink.match(path) === false) {
-                    // Throw specific error
-                    // to break out of the promise chain.
-                    throw new Error('no match');
-                }
-
-                permalink = staticPostPermalink;
-                usingStaticPermalink = true;
-            }
-
-            params = permalink.params;
-
-            // Sanitize params we're going to use to lookup the post.
-            postLookup = _.pick(permalink.params, 'slug', 'id');
-            // Add author, tag and fields
-            postLookup.include = 'author,tags,fields';
-
-            // Query database to find post
-            return api.posts.read(postLookup);
-        }).then(function (result) {
+        api.posts.read(options).then(function (result) {
             var post = result.posts[0],
                 slugDate = [],
                 slugFormat = [];
 
-            if (!post) {
-                return next();
-            }
-
             function render() {
                 // If we're ready to render the page but the last param is 'edit' then we'll send you to the edit page.
-                if (params.edit === 'edit') {
+                if (req.params.edit !== undefined) {
+                    if (req.params.edit !== 'edit') {
+                        // Give back to the route, if we have an invalid value for the edit param
+                        return next();
+                    }
+
                     return res.redirect(config().paths.subdir + '/ghost/editor/' + post.id + '/');
-                } else if (params.edit !== undefined) {
-                    // Use throw 'no match' to show 404.
-                    throw new Error('no match');
                 }
 
-                setReqCtx(req, post);
+                setRequestContext(req, post);
 
                 filters.doFilter('prePostsRender', post).then(function (post) {
                     api.settings.read('activeTheme').then(function (response) {
@@ -234,13 +159,11 @@ frontendControllers = {
 
             // If we've checked the path with the static permalink structure
             // then the post must be a static post.
-            // If it is not then we must return.
-            if (usingStaticPermalink) {
-                if (post.page === 1) {
-                    return render();
+            // If it is not then we must continue router handling.
+            if (req.route.name === 'static') {
+                if (post.page !== 1) {
+                    return next();
                 }
-
-                return next();
             }
 
             // If there is any date based paramter in the slug
@@ -274,120 +197,79 @@ frontendControllers = {
 
             render();
 
-        }).otherwise(function (err) {
-            // If we've thrown an error message
-            // of 'no match' then we found
-            // no path match.
-            if (err.message === 'no match') {
-                return next();
-            }
-
-            return handleError(next)(err);
-        });
+        }).otherwise(handleError(next));
     },
     'rss': function (req, res, next) {
-        // Initialize RSS
-        var pageParam = req.params.page !== undefined ? parseInt(req.params.page, 10) : 1,
-            tagParam = req.params.slug;
-
-        // No negative pages, or page 1
-        if (isNaN(pageParam) || pageParam < 1 ||
-            (pageParam === 1 && (req.route.path === '/rss/:page/' || req.route.path === '/tag/:slug/rss/:page/'))) {
-            if (tagParam !== undefined) {
-                return res.redirect(config().paths.subdir + '/tag/' + tagParam + '/rss/');
-            } else {
-                return res.redirect(config().paths.subdir + '/rss/');
-            }
-        }
-
         return when.settle([
+            findPage(req, res, next),
             api.settings.read('title'),
             api.settings.read('description'),
             api.settings.read('permalinks')
         ]).then(function (result) {
+            var page = result[0].value,
+                title = result[1].value.settings[0].value,
+                description = result[2].value.settings[0].value,
+                permalinks = result[3].value.settings[0],
+                siteUrl = config.urlFor('home', {secure: req.secure}, true),
+                feedUrl = config.urlFor('rss', {secure: req.secure}, true),
+                feedItems = [],
+                feed;
 
-            var options = {};
-            if (pageParam) { options.page = pageParam; }
-            if (tagParam) { options.tag = tagParam; }
-
-            options.include = 'author,tags,fields';
-
-            return api.posts.browse(options).then(function (page) {
-
-                var title = result[0].value.settings[0].value,
-                    description = result[1].value.settings[0].value,
-                    permalinks = result[2].value.settings[0],
-                    siteUrl = config.urlFor('home', {secure: req.secure}, true),
-                    feedUrl = config.urlFor('rss', {secure: req.secure}, true),
-                    maxPage = page.meta.pagination.pages,
-                    feedItems = [],
-                    feed;
-
-                if (tagParam) {
-                    if (page.meta.filters.tags) {
-                        title = page.meta.filters.tags[0].name + ' - ' + title;
-                        feedUrl = feedUrl + 'tag/' + page.meta.filters.tags[0].slug + '/';
-                    }
+            if (req.params.tag !== undefined) {
+                if (page.meta.filters.tags) {
+                    title = page.meta.filters.tags[0].name + ' - ' + title;
+                    feedUrl = feedUrl + 'tag/' + page.meta.filters.tags[0].slug + '/';
                 }
+            }
 
-                feed = new RSS({
-                    title: title,
-                    description: description,
-                    generator: 'Ghost v' + res.locals.version,
-                    feed_url: feedUrl,
-                    site_url: siteUrl,
-                    ttl: '60'
-                });
-
-                // If page is greater than number of pages we have, redirect to last page
-                if (pageParam > maxPage) {
-                    if (tagParam) {
-                        return res.redirect(config().paths.subdir + '/tag/' + tagParam + '/rss/' + maxPage + '/');
-                    } else {
-                        return res.redirect(config().paths.subdir + '/rss/' + maxPage + '/');
-                    }
-                }
-
-                setReqCtx(req, page.posts);
-
-                filters.doFilter('prePostsRender', page.posts).then(function (posts) {
-                    posts.forEach(function (post) {
-                        var deferred = when.defer(),
-                            item = {
-                                title: post.title,
-                                guid: post.uuid,
-                                url: config.urlFor('post', {post: post, permalinks: permalinks}, true),
-                                date: post.published_at,
-                                categories: _.pluck(post.tags, 'name'),
-                                author: post.author ? post.author.name : null
-                            },
-                            content = post.html;
-
-                        //set img src to absolute url
-                        content = content.replace(/src=["|'|\s]?([\w\/\?\$\.\+\-;%:@&=,_]+)["|'|\s]?/gi, function (match, p1) {
-                            /*jslint unparam:true*/
-                            p1 = url.resolve(siteUrl, p1);
-                            return "src='" + p1 + "' ";
-                        });
-                        //set a href to absolute url
-                        content = content.replace(/href=["|'|\s]?([\w\/\?\$\.\+\-;%:@&=,_]+)["|'|\s]?/gi, function (match, p1) {
-                            /*jslint unparam:true*/
-                            p1 = url.resolve(siteUrl, p1);
-                            return "href='" + p1 + "' ";
-                        });
-                        item.description = content;
-                        feed.item(item);
-                        feedItems.push(deferred.promise);
-                        deferred.resolve();
-                    });
-                });
-
-                when.all(feedItems).then(function () {
-                    res.set('Content-Type', 'text/xml; charset=UTF-8');
-                    res.send(feed.xml());
-                });
+            feed = new RSS({
+                title: title,
+                description: description,
+                generator: 'Ghost v' + res.locals.version,
+                feed_url: feedUrl,
+                site_url: siteUrl,
+                ttl: '60'
             });
-        }).otherwise(handleError(next));
+
+            setRequestContext(req, page.posts);
+
+            filters.doFilter('prePostsRender', page.posts).then(function (posts) {
+                posts.forEach(function (post) {
+                    var deferred = when.defer(),
+                        item = {
+                            title: post.title,
+                            guid: post.uuid,
+                            url: config.urlFor('post', {post: post, permalinks: permalinks}, true),
+                            date: post.published_at,
+                            categories: _.pluck(post.tags, 'name'),
+                            author: post.author ? post.author.name : null
+                        },
+                        content = post.html;
+
+                    //set img src to absolute url
+                    content = content.replace(/src=["|'|\s]?([\w\/\?\$\.\+\-;%:@&=,_]+)["|'|\s]?/gi, function (match, p1) {
+                        /*jslint unparam:true*/
+                        p1 = url.resolve(siteUrl, p1);
+                        return "src='" + p1 + "' ";
+                    });
+                    //set a href to absolute url
+                    content = content.replace(/href=["|'|\s]?([\w\/\?\$\.\+\-;%:@&=,_]+)["|'|\s]?/gi, function (match, p1) {
+                        /*jslint unparam:true*/
+                        p1 = url.resolve(siteUrl, p1);
+                        return "href='" + p1 + "' ";
+                    });
+                    item.description = content;
+                    feed.item(item);
+                    feedItems.push(deferred.promise);
+                    deferred.resolve();
+                });
+            }).otherwise(handleError(next));
+
+            when.all(feedItems).then(function () {
+                res.set('Content-Type', 'text/xml; charset=UTF-8');
+                res.send(feed.xml());
+            });
+        });
     }
 };
 
