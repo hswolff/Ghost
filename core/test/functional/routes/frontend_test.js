@@ -74,7 +74,7 @@ describe('Frontend Routing', function () {
 
         it('should not have as second page', function (done) {
             request.get('/page/2/')
-                .expect('Location', '/')
+                .expect('Location', '/page/1/')
                 .expect('Cache-Control', cacheRules['public'])
                 .expect(302)
                 .end(doEnd(done));
@@ -203,9 +203,8 @@ describe('Frontend Routing', function () {
         });
 
         it('should not have as second page', function (done) {
-            request.get('/rss/2/')
-                // TODO this should probably redirect straight to /rss/ with 301?
-                .expect('Location', '/rss/1/')
+            request.get('/rss/page/2/')
+                .expect('Location', '/rss/page/1/')
                 .expect('Cache-Control', cacheRules['public'])
                 .expect(302)
                 .end(doEnd(done));

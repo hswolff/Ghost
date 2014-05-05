@@ -34,7 +34,7 @@ function handleError(next) {
 
 // Add Request context parameter to the data object
 // to be passed down to the templates
-function setReqCtx(req, data) {
+function setRequestContext(req, data) {
     (Array.isArray(data) ? data : [data]).forEach(function (d) {
         d.secure = req.secure;
     });
@@ -43,23 +43,17 @@ function setReqCtx(req, data) {
 // A private controller fetching multiple posts
 function findPage(req, res, next) {
     // The post browse options
-    var options = {
-        page: 1
-    };
+    var newRoute,
+        options = {
+            page: 1
+        };
 
     return when.promise(function (resolve) {
-        var newRoute;
-
         if (req.params.page !== undefined) {
             options.page = parseInt(req.params.page, 10);
 
-            if (isNaN(options.page)) {
-                // We have a non numeric value so pass this back to the router
-                return next();
-            }
-
-            if (options.page === 1) {
-                // The page is 1, so redirect to remove page number from url
+            if (isNaN(options.page) || options.page <= 1) {
+                // The page is 1 or less, so redirect to remove page number from url
                 newRoute = req.route.name;
                 // TODO find a better solution for nested optional parts of an url e.g. "/tags/:tag/(page/:page/)?"
                 newRoute = newRoute.substring(0, newRoute.indexOf('.page'));
@@ -72,8 +66,6 @@ function findPage(req, res, next) {
         }
 
         // Options are ready so resolve to fetch posts per page and browse the posts
-        resolve();
-    }).then(function () {
         return api.settings.read('postsPerPage').then(function (response) {
             var postsPerPage = parseInt(response.settings[0].value, 10);
 
@@ -90,7 +82,7 @@ function findPage(req, res, next) {
                 return res.redirect(req.generatePath({ page: page.meta.pagination.pages }));
             }
 
-            return when(page);
+            resolve(page);
         }).otherwise(handleError(next));
     });
 }
@@ -98,7 +90,7 @@ function findPage(req, res, next) {
 frontendControllers = {
     'homepage': function (req, res, next) {
         findPage(req, res, next).then(function (page) {
-            setReqCtx(req, page.posts);
+            setRequestContext(req, page.posts);
 
             // Render the page of posts
             filters.doFilter('prePostsRender', page.posts).then(function (posts) {
@@ -108,9 +100,9 @@ frontendControllers = {
     },
     'tag': function (req, res, next) {
         findPage(req, res, next).then(function (page) {
-            setReqCtx(req, page.posts);
+            setRequestContext(req, page.posts);
             if (page.meta.filters.tags) {
-                setReqCtx(req, page.meta.filters.tags[0]);
+                setRequestContext(req, page.meta.filters.tags[0]);
             }
 
             // Render the page of posts
@@ -143,11 +135,16 @@ frontendControllers = {
 
             function render() {
                 // If we're ready to render the page but the last param is 'edit' then we'll send you to the edit page.
-                if (params.edit === 'edit') {
+                if (req.params.edit !== undefined) {
+                    if (req.params.edit !== 'edit') {
+                        // Give back to the route, if we have an invalid value for the edit param
+                        return next();
+                    }
+
                     return res.redirect(config().paths.subdir + '/ghost/editor/' + post.id + '/');
                 }
 
-                setReqCtx(req, post);
+                setRequestContext(req, post);
 
                 filters.doFilter('prePostsRender', post).then(function (post) {
                     api.settings.read('activeTheme').then(function (response) {
@@ -204,12 +201,12 @@ frontendControllers = {
     },
     'rss': function (req, res, next) {
         return when.settle([
-            findPage(req, next),
+            findPage(req, res, next),
             api.settings.read('title'),
             api.settings.read('description'),
             api.settings.read('permalinks')
         ]).then(function (result) {
-            var page = result[0],
+            var page = result[0].value,
                 title = result[1].value.settings[0].value,
                 description = result[2].value.settings[0].value,
                 permalinks = result[3].value.settings[0],
@@ -234,7 +231,7 @@ frontendControllers = {
                 ttl: '60'
             });
 
-            setReqCtx(req, page.posts);
+            setRequestContext(req, page.posts);
 
             filters.doFilter('prePostsRender', page.posts).then(function (posts) {
                 posts.forEach(function (post) {
@@ -266,13 +263,13 @@ frontendControllers = {
                     feedItems.push(deferred.promise);
                     deferred.resolve();
                 });
-            });
+            }).otherwise(handleError(next));
 
             when.all(feedItems).then(function () {
                 res.set('Content-Type', 'text/xml; charset=UTF-8');
                 res.send(feed.xml());
             });
-        }).otherwise(handleError(next));
+        });
     }
 };
 
