@@ -34,7 +34,7 @@ posts = {
     // **takes:** filter / pagination parameters
     browse: function browse(options) {
         options = options || {};
-        
+
         // only published posts if no user is present
         if (!this.user) {
             options.status = 'published';

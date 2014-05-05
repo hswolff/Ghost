@@ -85,6 +85,7 @@
         "grunt-shell": "~0.6.1",
         "grunt-update-submodules": "~0.2.1",
         "matchdep": "~0.3.0",
+        "methods": "0.1.0",
         "mocha": "~1.15.1",
         "nock": "0.27.2",
         "rewire": "~2.0.0",
